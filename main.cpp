@@ -3,151 +3,8 @@
 #include <opencv2/opencv.hpp>
 #include <fstream>
 
-class CIFAR10Dataset : public torch::data::datasets::Dataset<CIFAR10Dataset>
-{
-public:
-    explicit CIFAR10Dataset(const std::string &root, bool train = true)
-        : root_(root), train_(train)
-    {
-        this->PrepareData();
-    }
-
-    torch::data::Example<> get(size_t index) override
-    {
-        return {images_[index], targets_[index]};
-    }
-
-    torch::optional<size_t> size() const override
-    {
-        return images_.size(0);
-    }
-
-private:
-    void PrepareData()
-    {
-        std::vector<std::string> files;
-        if (train_)
-            files = {"data_batch_1.bin", "data_batch_2.bin", "data_batch_3.bin", "data_batch_4.bin", "data_batch_5.bin"};
-        else
-            files = {"test_batch.bin"};
-
-        std::vector<torch::Tensor> images;
-        std::vector<torch::Tensor> targets;
-
-        for (const auto &file : files)
-        {
-            std::ifstream file_stream{
-                root_ + "/" + file,
-                std::ios::binary};
-
-            if (!file_stream)
-            {
-                throw std::runtime_error("Cannot open file: " + root_ + "/" + file);
-            }
-
-            std::vector<uint8_t> data(
-                (std::istreambuf_iterator<char>(file_stream)),
-                std::istreambuf_iterator<char>());
-
-            const size_t num_images = data.size() / (32 * 32 * 3 + 1);
-            for (size_t i = 0; i < num_images; ++i)
-            {
-                const size_t offset = i * (32 * 32 * 3 + 1);
-                const uint8_t target = data[offset];
-                auto options = torch::TensorOptions().dtype(torch::kUInt8).device(torch::kCPU);
-                auto tensor = torch::from_blob(data.data() + offset + 1, {3, 32, 32}, options);
-                tensor = tensor.to(torch::kFloat32) / 255;
-                images.push_back(tensor);
-                targets.push_back(torch::full({1}, target, options.dtype(torch::kLong)));
-            }
-        }
-
-        images_ = torch::stack(images);
-        targets_ = torch::stack(targets);
-    }
-
-private:
-    std::string root_;
-    bool train_;
-    torch::Tensor images_;
-    torch::Tensor targets_;
-};
-
-class CIFAR10Classifier : public torch::nn::Module
-{
-public:
-    CIFAR10Classifier()
-    {
-        // Define the feature extractor
-        features = torch::nn::Sequential(
-            // Block 1
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(3, 64, 3).padding(1)),
-            torch::nn::BatchNorm2d(64),
-            torch::nn::ReLU(true),
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(64, 64, 3).padding(1)),
-            torch::nn::BatchNorm2d(64),
-            torch::nn::ReLU(true),
-            torch::nn::MaxPool2d(torch::nn::MaxPool2dOptions(2).stride(2)),
-
-            // Block 2
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(64, 128, 3).padding(1)),
-            torch::nn::BatchNorm2d(128),
-            torch::nn::ReLU(true),
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(128, 128, 3).padding(1)),
-            torch::nn::BatchNorm2d(128),
-            torch::nn::ReLU(true),
-            torch::nn::MaxPool2d(torch::nn::MaxPool2dOptions(2).stride(2)),
-
-            // Block 3
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(128, 256, 3).padding(1)),
-            torch::nn::BatchNorm2d(256),
-            torch::nn::ReLU(true),
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(256, 256, 3).padding(1)),
-            torch::nn::BatchNorm2d(256),
-            torch::nn::ReLU(true),
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(256, 256, 3).padding(1)),
-            torch::nn::BatchNorm2d(256),
-            torch::nn::ReLU(true),
-            torch::nn::MaxPool2d(torch::nn::MaxPool2dOptions(2).stride(2)),
-
-            // Block 4
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(256, 512, 3).padding(1)),
-            torch::nn::BatchNorm2d(512),
-            torch::nn::ReLU(true),
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(512, 512, 3).padding(1)),
-            torch::nn::BatchNorm2d(512),
-            torch::nn::ReLU(true),
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(512, 512, 3).padding(1)),
-            torch::nn::BatchNorm2d(512),
-            torch::nn::ReLU(true),
-            torch::nn::MaxPool2d(torch::nn::MaxPool2dOptions(2).stride(2)));
-
-        // Define the classifier
-        classifier = torch::nn::Sequential(
-            torch::nn::Dropout(0.5),
-            torch::nn::Linear(512 * 2 * 2, 4096),
-            torch::nn::ReLU(true),
-            torch::nn::Dropout(0.5),
-            torch::nn::Linear(4096, 4096),
-            torch::nn::ReLU(true),
-            torch::nn::Linear(4096, 10));
-
-        // Register the modules
-        register_module("features", features);
-        register_module("classifier", classifier);
-    }
-
-    torch::Tensor forward(torch::Tensor x)
-    {
-        x = features->forward(x);
-        x = x.view({x.size(0), -1});
-        x = classifier->forward(x);
-        return x;
-    }
-
-private:
-    torch::nn::Sequential features{nullptr}, classifier{nullptr};
-};
+#include "Dataset.h"
+#include "Classifier.h"
 
 int main(int argc, char **argv)
 {
@@ -179,12 +36,12 @@ int main(int argc, char **argv)
 
         model->to(device);
 
-        auto optimizer = torch::optim::Adam(model->parameters(), torch::optim::AdamOptions(1e-4));
+        auto optimizer = torch::optim::Adam(model->parameters(), torch::optim::AdamOptions(1e-3));
 
         auto criterion = torch::nn::CrossEntropyLoss();
 
         // Training
-        for (size_t epoch = 1; epoch <= 50; ++epoch)
+        for (size_t epoch = 1; epoch <= 20; ++epoch)
         {
             model->train();
             size_t batch_index = 0;
