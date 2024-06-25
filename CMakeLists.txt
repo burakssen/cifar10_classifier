@@ -11,7 +11,7 @@ list(APPEND CMAKE_PREFIX_PATH "/opt/homebrew/Cellar/opencv/4.9.0_9.reinstall")
 # Find OpenCV package
 find_package(OpenCV COMPONENTS core highgui imgproc imgcodecs REQUIRED)
 
-add_executable(cifar10_classifier main.cpp)
+add_executable(cifar10_classifier main.cpp Dataset.cpp Classifier.cpp)
 
 # Include OpenCV headers
 target_include_directories(cifar10_classifier PUBLIC ${OpenCV_INCLUDE_DIRS})
