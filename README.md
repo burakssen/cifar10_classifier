@@ -31,4 +31,6 @@ make
 
 ## Results
 
-The model achieves an accuracy of around 83% after 50 epochs.
+The model achieves an accuracy of around 88% after 20 epochs.
+
+![Loss](./loss.png)
